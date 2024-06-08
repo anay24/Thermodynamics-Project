@@ -1,0 +1,127 @@
+%% AE 2010 Thermodynamics Computer Project
+
+compressionR = zeros(5, 1);
+strokeL = zeros(5, 1);
+boreDiam = zeros(5, 1);
+fluidStoich = zeros(5, 1);
+
+for i = 1:5
+    compressionR(i) = 5 + (8 - 5) * (i - 1) / 4;
+    strokeL(i) = .1 + (.25 - .1) * (i - 1) / 4;
+    boreDiam(i) = .1 + (.25 - .1) * (i - 1) / 4;
+    fluidStoich(i) = .8 + (1.2 - .8) * (i - 1) / 4;
+end
+
+% At 3048m
+
+Pow_lower_lim = .9 * 84.83718305; % KW per cylinder per cycle
+Pollutant_sum = 25; % grams emmitted per cycle
+currentBest_Vals = zeros(4, 1);
+
+for j = 1:5
+    for k = 1:5
+        for l = 1:5
+            for m = 1:5
+                V_min = (pi * (boreDiam(l) / 2)^2 * strokeL(k)) / (compressionR(j) - 1);
+                V_max = compressionR(j) * V_min;
+                isoctane_Start = 1.53526 + (2.30290 - 1.53526) * (fluidStoich(m) - 0.8) / 0.4;
+    
+                % Process 1 -> 2
+                process12_Data = readlines("AE_2010_Proj_1-2.eq");
+                process12_Data(8) = sprintf("ISOOCTANE                %-7.5f     0.06237", isoctane_Start);
+                process12_Data(13) = sprintf("Volume_Ratio                1          %-5.3f", 1/compressionR(j));
+                
+                writelines(process12_Data, "AE_2010_Proj_1-2.eq");
+                
+                system('"C:\Users\drewf\OneDrive\Desktop\Gaseq.exe" /e "C:\Users\drewf\OneDrive\Documents\MATLAB\AE_2010_Proj_1-2.eq"');
+    
+                process12_Data = readlines("AE_2010_Proj_1-2.eq");
+                enth_Str = char(process12_Data(23));
+                enth_init = enth_Str(29:39);
+                enth_1 = str2double(enth_init);
+                enth_final = enth_Str(40:end);
+                enth_2 = str2double(enth_final);
+                delta_H_1 = enth_2 - enth_1;
+                new_Reactants = strings([1, 3]);
+                for n = 1:3
+                    new_Reactants(n) = process12_Data(n + 5);
+                end
+                new_Properties = zeros(2, 1);
+                for n = 1:2
+                    char_Line = process12_Data(n + 10);
+                    char_Line = char(char_Line);
+                    new_Properties(n) = str2double(char_Line(40:end));
+                end
+    
+                % Process 2 -> 3
+                process23_Data = readlines("AE_2010_Proj_2-3.eq");
+                process23_Data(6) = new_Reactants(1);
+                process23_Data(7) = new_Reactants(2);
+                process23_Data(8) = new_Reactants(3);
+                process23_Data(20) = sprintf("Temperature,K               %-5.1f      2859.6", new_Properties(1));
+                process23_Data(21) = sprintf("Pressure,atm                %-5.2f      69.22", new_Properties(2));
+                
+                writelines(process23_Data, "AE_2010_Proj_2-3.eq");
+    
+                system('"C:\Users\drewf\OneDrive\Desktop\Gaseq.exe" /e "C:\Users\drewf\OneDrive\Documents\MATLAB\AE_2010_Proj_2-3.eq"');
+    
+                process23_Data = readlines("AE_2010_Proj_2-3.eq");
+                CO_Str = char(process23_Data(14));
+                NO_Str = char(process23_Data(17));
+                CO_mass_frac = str2double(CO_Str(38:end));
+                NO_mass_frac = str2double(NO_Str(38:end));
+    
+                % change density when changing alt************
+                CO_prod = 945.3 * V_max * CO_mass_frac; % mass in g
+                NO_prod = 945.3 * V_max * NO_mass_frac; % mass in g
+                new_Reactants = strings([1, 7]);
+                for n = 1:7
+                    new_Reactants(n) = process23_Data(n + 10);
+                end
+                new_Properties = zeros(2, 1);
+                for n = 1:2
+                    char_Line = process23_Data(n + 19);
+                    char_Line = char(char_Line);
+                    new_Properties(n) = str2double(char_Line(40:end));
+                end
+    
+                % Process 3 -> 4
+                process34_Data = readlines("AE_2010_Proj_3-4.eq");
+                for n = 1:7
+                    process34_Data(n + 5) = new_Reactants(n);
+                end
+                process34_Data(15) = sprintf("Temperature,K               %-6.1f     1776.2", new_Properties(1));
+                process34_Data(16) = sprintf("Pressure,atm                %-5.2f      6.62", new_Properties(2));
+                process34_Data(17) = sprintf("Volume_Ratio                1          %-5.3f", compressionR(j));
+                
+                writelines(process34_Data, "AE_2010_Proj_3-4.eq");
+    
+                system('"C:\Users\drewf\OneDrive\Desktop\Gaseq.exe" /e "C:\Users\drewf\OneDrive\Documents\MATLAB\AE_2010_Proj_3-4.eq"')
+    
+                process34_Data = readlines("AE_2010_Proj_3-4.eq");
+                enth_Str = char(process34_Data(27));
+                enth_init = enth_Str(29:39);
+                enth_1 = str2double(enth_init);
+                enth_final = enth_Str(40:end);
+                enth_2 = str2double(enth_final);
+                delta_H_2 = enth_2 - enth_1;
+    
+                % Calculations Afterward
+                W_tot = .9453 * V_max * (delta_H_1 + delta_H_2); % change density to match alt*****
+                Pow_prod = - W_tot / (0.02142857145 * 2);
+                if (Pow_prod >= Pow_lower_lim)
+                    if (CO_prod + NO_prod < Pollutant_sum)
+                        Pollutant_sum = CO_prod + NO_prod;
+                        currentBest_Vals(1) = compressionR(j);
+                        currentBest_Vals(2) = strokeL(k);
+                        currentBest_Vals(3) = boreDiam(l);
+                        currentBest_Vals(4) = fluidStoich(m);
+                        power_Best = Pow_prod;
+                        NO_prod_val = NO_prod;
+                        CO_prod_val = CO_prod;
+                    end
+                end
+            end
+        end
+    end
+end
